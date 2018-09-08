@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/julienschmidt/httprouter"
+	"io/ioutil"
 	"log"
 	"net/http"
 )
@@ -15,29 +16,37 @@ type Profile struct {
 	FavoriteFoods []string `json:"favorite_foods"`
 }
 
-var bob Profile = Profile{
-	Name:          "Bob",
-	Age:           25,
-	Gender:        "Man",
-	FavoriteFoods: []string{"Hamburger", "Cookie", "Chocolate"},
-}
+var savedProfiles map[string]Profile = map[string]Profile{}
 
-var alice Profile = Profile{
-	Name:          "Alice",
-	Age:           24,
-	Gender:        "Woman",
-	FavoriteFoods: []string{"Apple", "Orange", "Melon"},
+func PostProfile(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
+	defer r.Body.Close()
+	body, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	var reqProfile Profile
+	err = json.Unmarshal(body, &reqProfile)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if reqProfile.Name == "" {
+		http.Error(w, "name is required.", http.StatusBadRequest)
+		return
+	}
+
+	savedProfiles[reqProfile.Name] = reqProfile
+	fmt.Fprintf(w, fmt.Sprintf("%d Created", http.StatusCreated))
 }
 
 func GetProfile(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 	name := p.ByName("name")
+	resProfile, found := savedProfiles[name]
 
-	var resProfile Profile
-	if name == "Bob" {
-		resProfile = bob
-	} else if name == "Alice" {
-		resProfile = alice
-	} else {
+	if !found {
 		http.Error(w, fmt.Sprintf("%d Not Found", http.StatusNotFound), http.StatusNotFound)
 		return
 	}
@@ -51,6 +60,7 @@ func GetProfile(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 
 func main() {
 	router := httprouter.New()
+	router.POST("/profile", PostProfile)
 	router.GET("/profile/:name", GetProfile)
 
 	err := http.ListenAndServe(":8080", router)
